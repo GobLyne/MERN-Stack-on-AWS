@@ -1,85 +1,159 @@
 import { useState, useEffect } from 'react';
+import ExampleForm from './components/ExampleForm';
+import ExampleList from './components/ExampleList';
+import Modal from './components/Modal';
 import './App.css';
 
 function App() {
   const [examples, setExamples] = useState([]);
-  const [formData, setFormData] = useState({
-    name: '',
-    description: ''
-  });
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [editingExample, setEditingExample] = useState(null);
+  const [deleteModal, setDeleteModal] = useState({ isOpen: false, exampleId: null });
 
   useEffect(() => {
     fetchExamples();
   }, []);
 
   const fetchExamples = async () => {
+    setLoading(true);
     try {
       const response = await fetch('/api/examples');
+      if (!response.ok) {
+        throw new Error('Failed to fetch examples');
+      }
       const data = await response.json();
       setExamples(data);
+      setError('');
     } catch (err) {
       console.error('Error fetching examples:', err);
+      setError('Failed to load items. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const handleSubmit = async (formData) => {
     try {
-      const response = await fetch('/api/examples', {
-        method: 'POST',
+      const url = editingExample
+        ? `/api/examples/${editingExample._id}`
+        : '/api/examples';
+
+      const method = editingExample ? 'PUT' : 'POST';
+
+      const response = await fetch(url, {
+        method,
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(formData),
       });
-      const newExample = await response.json();
-      setExamples([...examples, newExample]);
-      setFormData({ name: '', description: '' });
+
+      if (!response.ok) {
+        throw new Error(`Failed to ${editingExample ? 'update' : 'create'} example`);
+      }
+
+      const data = await response.json();
+
+      if (editingExample) {
+        setExamples(examples.map(ex => ex._id === editingExample._id ? data : ex));
+        setEditingExample(null);
+      } else {
+        setExamples([...examples, data]);
+      }
+
+      setError('');
     } catch (err) {
-      console.error('Error adding example:', err);
+      console.error('Error submitting form:', err);
+      setError(`Failed to ${editingExample ? 'update' : 'add'} item. Please try again.`);
     }
   };
 
-  const handleChange = (e) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value
-    });
+  const handleEdit = (example) => {
+    setEditingExample(example);
+    // Scroll to top where the form is
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleCancelEdit = () => {
+    setEditingExample(null);
+  };
+
+  const handleDeleteClick = (exampleId) => {
+    setDeleteModal({ isOpen: true, exampleId });
+  };
+
+  const handleDeleteConfirm = async () => {
+    try {
+      const response = await fetch(`/api/examples/${deleteModal.exampleId}`, {
+        method: 'DELETE',
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to delete example');
+      }
+
+      setExamples(examples.filter(ex => ex._id !== deleteModal.exampleId));
+      setDeleteModal({ isOpen: false, exampleId: null });
+      setError('');
+    } catch (err) {
+      console.error('Error deleting example:', err);
+      setError('Failed to delete item. Please try again.');
+    }
+  };
+
+  const handleDeleteCancel = () => {
+    setDeleteModal({ isOpen: false, exampleId: null });
   };
 
   return (
     <div className="App">
-      <h1>MERN Stack on AWS</h1>
-      
-      <form onSubmit={handleSubmit}>
-        <input
-          type="text"
-          name="name"
-          value={formData.name}
-          onChange={handleChange}
-          placeholder="Name"
-          required
-        />
-        <input
-          type="text"
-          name="description"
-          value={formData.description}
-          onChange={handleChange}
-          placeholder="Description"
-          required
-        />
-        <button type="submit">Add Example</button>
-      </form>
+      <div className="app-header">
+        <h1 className="app-title">
+          <span className="title-icon">🚀</span>
+          MERN Stack Dashboard
+        </h1>
+        <p className="app-subtitle">Manage your items with style</p>
+      </div>
 
-      <h2>Examples</h2>
-      <ul>
-        {examples.map((example) => (
-          <li key={example._id}>
-            <h3>{example.name}</h3>
-            <p>{example.description}</p>
-          </li>
-        ))}
-      </ul>
+      {error && (
+        <div className="error-message">
+          <span className="error-icon">⚠️</span>
+          {error}
+          <button
+            className="error-dismiss"
+            onClick={() => setError('')}
+            aria-label="Dismiss error"
+          >
+            ×
+          </button>
+        </div>
+      )}
+
+      <ExampleForm
+        onSubmit={handleSubmit}
+        editingExample={editingExample}
+        onCancelEdit={handleCancelEdit}
+      />
+
+      <ExampleList
+        examples={examples}
+        onEdit={handleEdit}
+        onDelete={handleDeleteClick}
+        loading={loading}
+      />
+
+      <Modal
+        isOpen={deleteModal.isOpen}
+        onClose={handleDeleteCancel}
+        onConfirm={handleDeleteConfirm}
+        title="Delete Item"
+        type="danger"
+        confirmText="Delete"
+        cancelText="Cancel"
+      >
+        <p>Are you sure you want to delete this item? This action cannot be undone.</p>
+      </Modal>
     </div>
   );
 }
